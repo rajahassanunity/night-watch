@@ -1,0 +1,737 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#100D0A">
+<title>Night Watch</title>
+<style>
+  :root{
+    --ink:#100D0A;
+    --ink-2:#1A1512;
+    --ink-3:#241D18;
+    --ember:#E8A24B;
+    --ember-dim:#8A6534;
+    --ochre:#B8792A;
+    --muted:#6B5C4A;
+    --faint:#3A3129;
+    --alarm:#E23D2E;
+    --alarm-bg:#2A0C08;
+    --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+    --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{height:100%;}
+  body{
+    margin:0; background:var(--ink); color:var(--ember);
+    font-family:var(--sans);
+    overflow:hidden;
+    transition:background .6s ease;
+    padding-top:env(safe-area-inset-top);
+    padding-bottom:env(safe-area-inset-bottom);
+  }
+  body.alarm{ background:var(--alarm-bg); }
+
+  #app{display:flex; flex-direction:column; height:100%; max-width:560px; margin:0 auto;}
+
+  /* ---------- header ---------- */
+  header{
+    display:flex; align-items:center; gap:12px;
+    padding:14px 18px 10px;
+  }
+  #preview{
+    width:56px; height:56px; border-radius:4px; object-fit:cover;
+    background:var(--ink-2); border:1px solid var(--faint);
+    filter:grayscale(1) contrast(1.1) brightness(.85);
+    flex:none;
+  }
+  .hdr-text{flex:1; min-width:0;}
+  .brand{
+    font-family:var(--mono); font-size:10px; letter-spacing:.22em;
+    text-transform:uppercase; color:var(--muted);
+  }
+  .elapsed{
+    font-family:var(--mono); font-size:19px; color:var(--ember-dim);
+    letter-spacing:.04em; margin-top:3px;
+  }
+  .pulse{
+    width:9px; height:9px; border-radius:50%; background:var(--faint); flex:none;
+  }
+  .pulse.live{ background:var(--ember); animation:breathe 3.4s ease-in-out infinite; }
+  body.alarm .pulse.live{ background:var(--alarm); animation-duration:.5s; }
+  @keyframes breathe{0%,100%{opacity:.25; transform:scale(.8)} 50%{opacity:1; transform:scale(1)}}
+
+  /* ---------- state ---------- */
+  main{
+    flex:1; display:flex; flex-direction:column;
+    align-items:center; justify-content:center;
+    padding:8px 18px; text-align:center; min-height:0;
+  }
+  #stateWord{
+    font-size:clamp(40px,15vw,74px); font-weight:900;
+    letter-spacing:-.03em; line-height:.9; text-transform:uppercase;
+    color:var(--ember); transition:color .4s ease;
+  }
+  #stateWord.watch{color:var(--ochre);}
+  #stateWord.alert{color:var(--alarm);}
+  #stateNote{
+    font-family:var(--mono); font-size:12px; color:var(--muted);
+    margin-top:14px; letter-spacing:.05em; line-height:1.6; max-width:34ch;
+  }
+
+  /* ---------- ribbon (signature) ---------- */
+  .ribbon-wrap{padding:0 18px;}
+  .ribbon-label{
+    display:flex; justify-content:space-between;
+    font-family:var(--mono); font-size:9px; letter-spacing:.18em;
+    text-transform:uppercase; color:var(--faint); margin-bottom:6px;
+  }
+  #ribbon{
+    width:100%; height:96px; display:block;
+    border-top:1px solid var(--faint); border-bottom:1px solid var(--faint);
+  }
+
+  /* ---------- meters ---------- */
+  .meters{display:flex; gap:1px; background:var(--faint); margin:18px 18px 0;}
+  .meter{flex:1; background:var(--ink); padding:11px 13px;}
+  .meter-top{display:flex; justify-content:space-between; align-items:baseline;}
+  .meter-name{
+    font-family:var(--mono); font-size:9px; letter-spacing:.18em;
+    text-transform:uppercase; color:var(--muted);
+  }
+  .meter-val{font-family:var(--mono); font-size:15px; color:var(--ember-dim);}
+  .bar{height:2px; background:var(--faint); margin-top:9px; overflow:hidden;}
+  .bar i{display:block; height:100%; width:0%; background:var(--ember); transition:width .15s linear;}
+
+  /* ---------- controls ---------- */
+  .controls{display:flex; gap:10px; padding:16px 18px 18px;}
+  button{
+    font-family:var(--mono); font-size:12px; letter-spacing:.14em;
+    text-transform:uppercase; cursor:pointer;
+    background:transparent; color:var(--ember-dim);
+    border:1px solid var(--faint); border-radius:2px;
+    padding:15px 14px; transition:all .18s ease;
+  }
+  button:focus-visible{outline:2px solid var(--ember); outline-offset:2px;}
+  button:active{transform:scale(.98);}
+  .btn-main{flex:1; color:var(--ink); background:var(--ember); border-color:var(--ember); font-weight:700;}
+  .btn-main.running{background:transparent; color:var(--ember-dim); border-color:var(--faint); font-weight:400;}
+  .btn-icon{width:52px; padding:15px 0; flex:none;}
+  #silenceBtn{
+    display:none; flex:1; background:var(--alarm); border-color:var(--alarm);
+    color:#fff; font-weight:700;
+  }
+  body.alarm #silenceBtn{display:block;}
+  body.alarm #startBtn{display:none;}
+
+  /* ---------- sheets ---------- */
+  .sheet{
+    position:fixed; inset:0; background:var(--ink);
+    transform:translateY(100%); transition:transform .3s cubic-bezier(.3,.7,.3,1);
+    z-index:40; display:flex; flex-direction:column;
+    padding-top:env(safe-area-inset-top); padding-bottom:env(safe-area-inset-bottom);
+  }
+  .sheet.open{transform:translateY(0);}
+  .sheet-head{
+    display:flex; justify-content:space-between; align-items:center;
+    padding:20px 18px 14px; border-bottom:1px solid var(--faint);
+  }
+  .sheet-title{
+    font-family:var(--mono); font-size:11px; letter-spacing:.22em;
+    text-transform:uppercase; color:var(--muted);
+  }
+  .sheet-body{flex:1; overflow-y:auto; padding:6px 18px 30px;}
+
+  .row{padding:16px 0; border-bottom:1px solid var(--ink-3);}
+  .row-top{display:flex; justify-content:space-between; align-items:baseline; gap:12px;}
+  .row-name{font-size:14px; color:var(--ember);}
+  .row-val{font-family:var(--mono); font-size:13px; color:var(--ember-dim); flex:none;}
+  .row-hint{font-size:11.5px; color:var(--muted); margin-top:5px; line-height:1.55;}
+  input[type=range]{
+    -webkit-appearance:none; appearance:none; width:100%; margin-top:14px;
+    background:transparent; height:20px;
+  }
+  input[type=range]::-webkit-slider-runnable-track{height:2px; background:var(--faint);}
+  input[type=range]::-moz-range-track{height:2px; background:var(--faint);}
+  input[type=range]::-webkit-slider-thumb{
+    -webkit-appearance:none; width:20px; height:20px; border-radius:50%;
+    background:var(--ember); margin-top:-9px;
+  }
+  input[type=range]::-moz-range-thumb{
+    width:20px; height:20px; border:0; border-radius:50%; background:var(--ember);
+  }
+  input[type=text]{
+    width:100%; margin-top:12px; background:var(--ink-2); color:var(--ember);
+    border:1px solid var(--faint); border-radius:2px; padding:11px;
+    font-family:var(--mono); font-size:12px;
+  }
+  .toggle{
+    width:46px; height:26px; border-radius:13px; background:var(--faint);
+    position:relative; cursor:pointer; flex:none; transition:background .2s; border:0;
+  }
+  .toggle::after{
+    content:''; position:absolute; top:3px; left:3px; width:20px; height:20px;
+    border-radius:50%; background:var(--muted); transition:all .2s;
+  }
+  .toggle.on{background:var(--ember-dim);}
+  .toggle.on::after{left:23px; background:var(--ember);}
+
+  #logList{font-family:var(--mono); font-size:12px;}
+  .log-row{display:flex; gap:12px; padding:11px 0; border-bottom:1px solid var(--ink-3);}
+  .log-time{color:var(--faint); flex:none;}
+  .log-msg{color:var(--ember-dim); line-height:1.5;}
+  .log-row.alert .log-msg{color:var(--alarm);}
+  .log-row.watch .log-msg{color:var(--ochre);}
+  .empty{color:var(--muted); font-size:12.5px; padding:28px 0; line-height:1.7;}
+
+  /* ---------- dim veil ---------- */
+  #veil{
+    position:fixed; inset:0; background:#000; opacity:0; pointer-events:none;
+    z-index:60; transition:opacity .8s ease;
+  }
+  #veil.on{opacity:.94; pointer-events:auto;}
+  #veilHint{
+    position:absolute; bottom:14%; left:0; right:0; text-align:center;
+    font-family:var(--mono); font-size:10px; letter-spacing:.2em;
+    text-transform:uppercase; color:#2A2018;
+  }
+
+  #banner{
+    display:none; margin:0 18px; padding:12px 14px;
+    border:1px solid var(--faint); border-left:2px solid var(--alarm);
+    font-size:12px; line-height:1.6; color:var(--muted);
+  }
+  #banner.show{display:block;}
+
+  @media (prefers-reduced-motion: reduce){
+    *{animation:none !important; transition:none !important;}
+  }
+</style>
+</head>
+<body>
+
+<div id="app">
+  <header>
+    <video id="preview" playsinline muted autoplay></video>
+    <div class="hdr-text">
+      <div class="brand">Night Watch</div>
+      <div class="elapsed" id="elapsed">—:—:—</div>
+    </div>
+    <div class="pulse" id="pulse"></div>
+  </header>
+
+  <div id="banner"></div>
+
+  <main>
+    <div id="stateWord">Ready</div>
+    <div id="stateNote">Phone ko crib ki taraf mount karein, charger laga dein, phir Start dabayein.</div>
+  </main>
+
+  <div class="ribbon-wrap">
+    <div class="ribbon-label"><span>Last 3 minutes</span><span>Motion ▲ &nbsp; Sound ▼</span></div>
+    <canvas id="ribbon"></canvas>
+  </div>
+
+  <div class="meters">
+    <div class="meter">
+      <div class="meter-top"><span class="meter-name">Motion</span><span class="meter-val" id="mVal">0.0</span></div>
+      <div class="bar"><i id="mBar"></i></div>
+    </div>
+    <div class="meter">
+      <div class="meter-top"><span class="meter-name">Sound</span><span class="meter-val" id="aVal">0</span></div>
+      <div class="bar"><i id="aBar"></i></div>
+    </div>
+  </div>
+
+  <div class="controls">
+    <button class="btn-main" id="startBtn">Start watching</button>
+    <button id="silenceBtn">Silence alarm</button>
+    <button class="btn-icon" id="dimBtn" title="Dim screen">☾</button>
+    <button class="btn-icon" id="logBtn" title="Log">≡</button>
+    <button class="btn-icon" id="setBtn" title="Settings">⚙</button>
+  </div>
+</div>
+
+<!-- Settings -->
+<div class="sheet" id="setSheet">
+  <div class="sheet-head">
+    <span class="sheet-title">Settings</span>
+    <button class="btn-icon" data-close="setSheet">✕</button>
+  </div>
+  <div class="sheet-body">
+
+    <div class="row">
+      <div class="row-top"><span class="row-name">Cry sensitivity</span><span class="row-val" id="crySensVal">6</span></div>
+      <div class="row-hint">Zyada → halki aawaz pe bhi trigger. Agar fan ya AC se false alarm aayein to kam karein.</div>
+      <input type="range" id="crySens" min="1" max="12" step="1" value="6">
+    </div>
+
+    <div class="row">
+      <div class="row-top"><span class="row-name">Cry alarm delay</span><span class="row-val" id="cryDelVal">20s</span></div>
+      <div class="row-hint">Itni dair musalsal rona rahe to alarm. Choti si awaaz ya neend mein kurhna ignore ho jayega.</div>
+      <input type="range" id="cryDel" min="5" max="60" step="5" value="20">
+    </div>
+
+    <div class="row">
+      <div class="row-top">
+        <span class="row-name">Stillness check</span>
+        <button class="toggle on" id="stillTog" role="switch" aria-checked="true"></button>
+      </div>
+      <div class="row-hint">Baby bilkul na hile to warning. Ye sab se kam bharosay wala signal hai — gehri neend mein bhi trigger ho sakta hai. Isko reminder samjhein, alarm nahi.</div>
+    </div>
+
+    <div class="row">
+      <div class="row-top"><span class="row-name">Stillness ke baad warning</span><span class="row-val" id="stillDelVal">3 min</span></div>
+      <input type="range" id="stillDel" min="1" max="10" step="1" value="3">
+    </div>
+
+    <div class="row">
+      <div class="row-top"><span class="row-name">Alarm volume</span><span class="row-val" id="volVal">70%</span></div>
+      <div class="row-hint">Ye is phone ke speaker se bajega. Agar aap doosre kamre mein hain to pura rakhein.</div>
+      <input type="range" id="vol" min="0" max="100" step="10" value="70">
+    </div>
+
+    <div class="row">
+      <div class="row-top">
+        <span class="row-name">Vibrate on alarm</span>
+        <button class="toggle on" id="vibTog" role="switch" aria-checked="true"></button>
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="row-top">
+        <span class="row-name">Front camera</span>
+        <button class="toggle" id="camTog" role="switch" aria-checked="false"></button>
+      </div>
+      <div class="row-hint">Band = peechay wala camera (behtar quality). Chalu = saamne wala, taake aap screen dekh kar aim kar sakein.</div>
+    </div>
+
+    <div class="row">
+      <div class="row-top"><span class="row-name">Notify URL</span></div>
+      <div class="row-hint">Optional. Apne phone pe push bhejne ke liye — ntfy.sh pe koi topic banayein aur uska URL yahan daal dein. Khali chhod dein to sirf is phone pe alarm bajega.</div>
+      <input type="text" id="ntfyUrl" placeholder="https://ntfy.sh/my-baby-topic" autocomplete="off" autocapitalize="off" spellcheck="false">
+    </div>
+
+    <div class="row" style="border:0">
+      <div class="row-hint" style="color:var(--faint)">
+        Ye tool safe sleep ki jagah nahi le sakta — sirf uske saath chalta hai.
+        Baby ko peeth ke bal, sakht flat gaddey pe, sleep sack mein (dhili chadar, takiya, ya toys ke baghair) sulayen.
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Log -->
+<div class="sheet" id="logSheet">
+  <div class="sheet-head">
+    <span class="sheet-title">Tonight</span>
+    <button class="btn-icon" data-close="logSheet">✕</button>
+  </div>
+  <div class="sheet-body"><div id="logList"></div></div>
+</div>
+
+<div id="veil"><div id="veilHint">Tap to wake screen</div></div>
+
+<script>
+(function(){
+'use strict';
+
+// ============ config (in-memory) ============
+const cfg = {
+  crySens:6, cryAlertSec:20, cryWatchSec:5,
+  stillOn:true, stillWatchMin:3,
+  stillThresh:0.30,          // % of pixels changed
+  struggleThresh:6.0,        // % — sudden thrashing
+  vol:0.7, vibrate:true, front:false, ntfy:''
+};
+
+const FPS = 10;
+const SAMPLE_MS = 500;
+const RIBBON_SPAN = 3*60*1000;
+const MAX_SAMPLES = RIBBON_SPAN / SAMPLE_MS;
+
+// ============ elements ============
+const $ = id => document.getElementById(id);
+const video=$('preview'), ribbon=$('ribbon'), body=document.body;
+const stateWord=$('stateWord'), stateNote=$('stateNote'), banner=$('banner');
+
+// ============ runtime ============
+let stream=null, running=false, startedAt=0, wakeLock=null;
+let audioCtx=null, analyser=null, freqData=null, alarmGain=null;
+let work=null, workCtx=null, prevFrame=null;
+let loopTimer=null, sampleTimer=null, uiTimer=null, alarmTimer=null;
+
+let motion=0, motionSmooth=0, sound=0, baseline=null, cryRatio=0;
+let cryBuf=[], stillSince=null, cryActiveSince=null, clearSince=null;
+let peakMotionRecent=[], samples=[], log=[];
+let state='ok', cause=null, alarming=false, suppressAudio=0;
+
+// ============ helpers ============
+function fmt(ms){
+  const s=Math.floor(ms/1000);
+  return [Math.floor(s/3600),Math.floor(s%3600/60),s%60]
+    .map(v=>String(v).padStart(2,'0')).join(':');
+}
+function clock(){
+  const d=new Date();
+  return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
+}
+function addLog(msg,kind){
+  log.unshift({t:clock(),msg,kind:kind||''});
+  if(log.length>120) log.pop();
+  renderLog();
+}
+function renderLog(){
+  const el=$('logList');
+  if(!log.length){ el.innerHTML='<div class="empty">Abhi koi event nahi. Jo kuch bhi ho — rona, harkat, khamoshi — sab yahan timestamp ke saath aata jayega.</div>'; return; }
+  el.innerHTML = log.map(e=>
+    '<div class="log-row '+e.kind+'"><span class="log-time">'+e.t+'</span><span class="log-msg">'+e.msg+'</span></div>'
+  ).join('');
+}
+function showBanner(txt){ banner.textContent=txt; banner.classList.add('show'); }
+
+// ============ camera + mic ============
+async function begin(){
+  try{
+    stream = await navigator.mediaDevices.getUserMedia({
+      video:{ facingMode: cfg.front?'user':'environment', width:{ideal:640}, height:{ideal:480}, frameRate:{ideal:15} },
+      audio:{ echoCancellation:false, noiseSuppression:false, autoGainControl:false }
+    });
+  }catch(err){
+    showBanner('Camera ya mic tak rasai nahi mili. Browser settings mein permission dein — aur yaad rahe ke ye page https ya localhost pe hi chalega, file:// pe nahi.');
+    return false;
+  }
+
+  video.srcObject = stream;
+  try{ await video.play(); }catch(e){}
+
+  audioCtx = new (window.AudioContext||window.webkitAudioContext)();
+  if(audioCtx.state==='suspended') await audioCtx.resume();
+  const src = audioCtx.createMediaStreamSource(stream);
+  analyser = audioCtx.createAnalyser();
+  analyser.fftSize = 2048;
+  analyser.smoothingTimeConstant = 0.5;
+  src.connect(analyser);
+  freqData = new Uint8Array(analyser.frequencyBinCount);
+
+  alarmGain = audioCtx.createGain();
+  alarmGain.gain.value = cfg.vol;
+  alarmGain.connect(audioCtx.destination);
+
+  work = document.createElement('canvas');
+  work.width=160; work.height=120;
+  workCtx = work.getContext('2d',{willReadFrequently:true});
+  prevFrame = null;
+
+  await lockScreen();
+  return true;
+}
+
+async function lockScreen(){
+  try{
+    if('wakeLock' in navigator){
+      wakeLock = await navigator.wakeLock.request('screen');
+      wakeLock.addEventListener('release',()=>{ wakeLock=null; });
+    }else{
+      showBanner('Is browser mein screen-lock rokne ka support nahi. Phone ki settings mein screen timeout "Never" kar dein, warna screen band hote hi monitoring ruk jayegi.');
+    }
+  }catch(e){}
+}
+document.addEventListener('visibilitychange',()=>{
+  if(document.visibilityState==='visible' && running && !wakeLock) lockScreen();
+});
+
+// ============ sensing ============
+function readMotion(){
+  if(!video.videoWidth) return;
+  workCtx.drawImage(video,0,0,work.width,work.height);
+  const cur = workCtx.getImageData(0,0,work.width,work.height).data;
+  if(prevFrame){
+    let changed=0; const total=work.width*work.height;
+    for(let i=0;i<cur.length;i+=4){
+      const g1=(cur[i]*3+cur[i+1]*6+cur[i+2])>>3;
+      const g2=(prevFrame[i]*3+prevFrame[i+1]*6+prevFrame[i+2])>>3;
+      if(Math.abs(g1-g2)>16) changed++;
+    }
+    motion = changed/total*100;
+    motionSmooth = motionSmooth*0.7 + motion*0.3;
+  }
+  prevFrame = cur;
+}
+
+function readSound(){
+  analyser.getByteFrequencyData(freqData);
+  const binHz = audioCtx.sampleRate / analyser.fftSize;
+  const band=(lo,hi)=>{
+    let s=0,n=0;
+    for(let i=Math.floor(lo/binHz); i<=Math.min(Math.ceil(hi/binHz),freqData.length-1); i++){ s+=freqData[i]; n++; }
+    return n?s/n:0;
+  };
+  const cry = band(280,900);        // infant cry fundamental + first harmonics
+  const full = band(60,8000);
+  sound = full;
+  cryRatio = full>0 ? cry/(full+1) : 0;
+
+  // adaptive room baseline: rises slowly, falls fast
+  if(baseline===null) baseline=full;
+  baseline += (full>baseline ? 0.004 : 0.06) * (full-baseline);
+}
+
+// ============ state machine ============
+function evaluate(){
+  const now=Date.now();
+
+  // --- cry ---
+  const above = sound - baseline;
+  const isCryFrame = above > (cfg.crySens*2.2) && cryRatio > 0.30 && suppressAudio<now;
+  cryBuf.push(isCryFrame);
+  if(cryBuf.length>FPS*3) cryBuf.shift();
+  const cryScore = cryBuf.filter(Boolean).length / cryBuf.length;
+  const crying = cryBuf.length>=FPS && cryScore>0.55;
+
+  if(crying){ if(!cryActiveSince) cryActiveSince=now; }
+  else cryActiveSince=null;
+
+  // --- stillness + struggle pattern ---
+  peakMotionRecent.push({t:now,v:motionSmooth});
+  peakMotionRecent = peakMotionRecent.filter(p=>now-p.t < 25000);
+  const recentPeak = peakMotionRecent.reduce((m,p)=>Math.max(m,p.v),0);
+
+  if(motionSmooth < cfg.stillThresh){ if(!stillSince) stillSince=now; }
+  else stillSince=null;
+
+  const stillFor = stillSince ? now-stillSince : 0;
+  const struggled = recentPeak > cfg.struggleThresh && stillFor > 22000;
+
+  // --- decide ---
+  let next='ok', why=null;
+
+  if(cryActiveSince){
+    const d=(now-cryActiveSince)/1000;
+    if(d >= cfg.cryAlertSec){ next='alert'; why='cry'; }
+    else if(d >= cfg.cryWatchSec){ next='watch'; why='cry'; }
+  }
+
+  if(cfg.stillOn && next!=='alert'){
+    if(struggled){
+      next = stillFor>60000 ? 'alert' : 'watch';
+      why='struggle';
+    }else{
+      const wMs=cfg.stillWatchMin*60000;
+      if(stillFor >= wMs+120000){ next='alert'; why='still'; }
+      else if(stillFor >= wMs){ if(next!=='watch'){ next='watch'; why='still'; } }
+    }
+  }
+
+  // big movement = someone's there, stand down
+  if(alarming && motionSmooth > 12){ next='ok'; why=null; clearAlarm('harkat mehsoos hui'); }
+
+  // require 3s of calm before dropping out of an alert
+  if(next==='ok' && state!=='ok'){
+    if(!clearSince) clearSince=now;
+    if(now-clearSince < 3000) return;
+  }else clearSince=null;
+
+  if(next!==state || why!==cause) transition(next,why);
+}
+
+const COPY = {
+  cry:   {watch:['Sunn raha hoon','Aawaz aa rahi hai — abhi dekh raha hoon ke ruk to nahi jati.'],
+          alert:['Ro raha hai','Musalsal rona — itni dair se ruka nahi.']},
+  still: {watch:['Bilkul saakit','Kaafi dair se koi harkat nahi. Gehri neend bhi ho sakti hai — ek nazar daal lein.'],
+          alert:['Ab tak saakit','Bohat dair se koi harkat nahi. Ja kar dekh lein.']},
+  struggle:{watch:['Kuch hua','Tezi se harkat hui, phir achanak sab ruk gaya. Ja kar dekhein.'],
+            alert:['Ja kar dekhein','Harkat ke foran baad musalsal khamoshi. Ye woh pattern hai jo check karna zaroori hai.']}
+};
+
+function transition(next,why){
+  const prev=state;
+  state=next; cause=why;
+
+  if(next==='ok'){
+    stateWord.className=''; stateWord.textContent='Settled';
+    stateNote.textContent = running ? 'Sab theek chal raha hai. Motion aur aawaz dono normal hain.'
+                                    : 'Phone ko crib ki taraf mount karein, charger laga dein, phir Start dabayein.';
+    if(prev!=='ok') addLog('Wapas normal','');
+    clearAlarm();
+  }else{
+    const c = COPY[why] && COPY[why][next];
+    stateWord.className = next;
+    stateWord.textContent = c ? c[0] : (next==='alert'?'Alert':'Watching');
+    stateNote.textContent = c ? c[1] : '';
+    if(prev!==next || true) addLog((next==='alert'?'ALARM · ':'Watch · ')+(c?c[0]:why), next);
+    if(next==='alert') raiseAlarm(c?c[0]:'Alert');
+    else clearAlarm();
+  }
+}
+
+// ============ alarm ============
+function raiseAlarm(reason){
+  if(alarming) return;
+  alarming=true; body.classList.add('alarm');
+  alarmGain.gain.value = cfg.vol;
+
+  const beep=()=>{
+    if(!alarming) return;
+    suppressAudio = Date.now()+1600;   // don't let our own alarm feed the cry detector
+    [0,0.22,0.44].forEach((off,i)=>{
+      const o=audioCtx.createOscillator(), g=audioCtx.createGain();
+      o.type='square'; o.frequency.value = i%2 ? 1320 : 880;
+      const t=audioCtx.currentTime+off;
+      g.gain.setValueAtTime(0,t);
+      g.gain.linearRampToValueAtTime(1,t+0.01);
+      g.gain.setValueAtTime(1,t+0.16);
+      g.gain.linearRampToValueAtTime(0,t+0.18);
+      o.connect(g); g.connect(alarmGain);
+      o.start(t); o.stop(t+0.2);
+    });
+    if(cfg.vibrate && navigator.vibrate) navigator.vibrate([300,120,300,120,300]);
+  };
+  beep();
+  alarmTimer = setInterval(beep,1700);
+
+  if(cfg.ntfy){
+    fetch(cfg.ntfy,{method:'POST',body:'Night Watch: '+reason,
+      headers:{'Title':'Night Watch','Priority':'urgent','Tags':'rotating_light'}})
+      .catch(()=>addLog('Push nahi ja saka — network check karein','watch'));
+  }
+}
+function clearAlarm(note){
+  if(!alarming) return;
+  alarming=false; body.classList.remove('alarm');
+  clearInterval(alarmTimer); alarmTimer=null;
+  if(navigator.vibrate) navigator.vibrate(0);
+  if(note) addLog('Alarm band — '+note,'');
+}
+
+// ============ ribbon ============
+function pushSample(){
+  samples.push({m:Math.min(motionSmooth,12)/12, a:Math.min(sound,180)/180, s:state});
+  if(samples.length>MAX_SAMPLES) samples.shift();
+}
+function drawRibbon(){
+  const dpr=Math.min(window.devicePixelRatio||1,2);
+  const w=ribbon.clientWidth, h=ribbon.clientHeight;
+  if(ribbon.width!==w*dpr){ ribbon.width=w*dpr; ribbon.height=h*dpr; }
+  const c=ribbon.getContext('2d');
+  c.setTransform(dpr,0,0,dpr,0,0);
+  c.clearRect(0,0,w,h);
+  const mid=h/2;
+
+  c.strokeStyle='#3A3129'; c.lineWidth=1;
+  c.beginPath(); c.moveTo(0,mid+.5); c.lineTo(w,mid+.5); c.stroke();
+  if(!samples.length) return;
+
+  const step = w/MAX_SAMPLES;
+  const x0 = w - samples.length*step;
+
+  samples.forEach((s,i)=>{
+    const x = x0 + i*step;
+    if(s.s==='alert'){ c.fillStyle='rgba(226,61,46,.16)'; c.fillRect(x,0,Math.max(step,1),h); }
+    else if(s.s==='watch'){ c.fillStyle='rgba(184,121,42,.13)'; c.fillRect(x,0,Math.max(step,1),h); }
+  });
+
+  // motion above
+  c.beginPath(); c.moveTo(x0,mid);
+  samples.forEach((s,i)=> c.lineTo(x0+i*step, mid - s.m*(mid-4)));
+  c.lineTo(x0+(samples.length-1)*step, mid); c.closePath();
+  c.fillStyle='rgba(232,162,75,.42)'; c.fill();
+
+  // sound below
+  c.beginPath(); c.moveTo(x0,mid);
+  samples.forEach((s,i)=> c.lineTo(x0+i*step, mid + s.a*(mid-4)));
+  c.lineTo(x0+(samples.length-1)*step, mid); c.closePath();
+  c.fillStyle='rgba(138,101,52,.5)'; c.fill();
+}
+
+// ============ ui tick ============
+function tickUI(){
+  $('elapsed').textContent = running ? fmt(Date.now()-startedAt) : '—:—:—';
+  $('mVal').textContent = motionSmooth.toFixed(1);
+  $('aVal').textContent = Math.round(sound);
+  $('mBar').style.width = Math.min(motionSmooth/12*100,100)+'%';
+  $('aBar').style.width = Math.min(sound/180*100,100)+'%';
+  drawRibbon();
+}
+
+// ============ start / stop ============
+async function start(){
+  const ok = await begin();
+  if(!ok) return;
+  running=true; startedAt=Date.now();
+  banner.classList.remove('show');
+  $('pulse').classList.add('live');
+  $('startBtn').textContent='Stop'; $('startBtn').classList.add('running');
+  addLog('Monitoring shuru','');
+  transition('ok',null);
+
+  loopTimer   = setInterval(()=>{ readMotion(); readSound(); evaluate(); }, 1000/FPS);
+  sampleTimer = setInterval(pushSample, SAMPLE_MS);
+  uiTimer     = setInterval(tickUI, 250);
+}
+function stop(){
+  running=false; clearAlarm();
+  [loopTimer,sampleTimer,uiTimer].forEach(clearInterval);
+  if(stream) stream.getTracks().forEach(t=>t.stop());
+  if(audioCtx) audioCtx.close();
+  stream=null; audioCtx=null; prevFrame=null; baseline=null;
+  cryBuf=[]; stillSince=null; cryActiveSince=null; peakMotionRecent=[];
+  if(wakeLock){ wakeLock.release(); wakeLock=null; }
+  $('pulse').classList.remove('live');
+  $('startBtn').textContent='Start watching'; $('startBtn').classList.remove('running');
+  addLog('Monitoring band','');
+  transition('ok',null);
+  tickUI();
+}
+
+// ============ wiring ============
+$('startBtn').onclick = ()=> running ? stop() : start();
+$('silenceBtn').onclick = ()=>{
+  clearAlarm('manually band kiya');
+  suppressAudio = Date.now()+30000;
+  stillSince = Date.now();
+  cryBuf=[]; cryActiveSince=null; peakMotionRecent=[];
+  transition('ok',null);
+};
+
+$('setBtn').onclick = ()=> $('setSheet').classList.add('open');
+$('logBtn').onclick = ()=>{ renderLog(); $('logSheet').classList.add('open'); };
+document.querySelectorAll('[data-close]').forEach(b=>
+  b.onclick = ()=> $(b.dataset.close).classList.remove('open'));
+
+const veil=$('veil');
+$('dimBtn').onclick = ()=> veil.classList.add('on');
+veil.onclick = ()=> veil.classList.remove('on');
+
+function slider(id,valId,key,fmtFn){
+  const el=$(id);
+  const paint=()=>{ $(valId).textContent = fmtFn(el.value); cfg[key]=parseFloat(el.value); };
+  el.oninput=paint; paint();
+}
+slider('crySens','crySensVal','crySens', v=>v);
+slider('cryDel','cryDelVal','cryAlertSec', v=>v+'s');
+slider('stillDel','stillDelVal','stillWatchMin', v=>v+' min');
+$('vol').oninput=e=>{ cfg.vol=e.target.value/100; $('volVal').textContent=e.target.value+'%';
+  if(alarmGain) alarmGain.gain.value=cfg.vol; };
+
+function toggle(id,key,after){
+  const el=$(id);
+  el.onclick=()=>{
+    cfg[key]=!cfg[key];
+    el.classList.toggle('on',cfg[key]);
+    el.setAttribute('aria-checked',cfg[key]);
+    if(after) after();
+  };
+}
+toggle('stillTog','stillOn');
+toggle('vibTog','vibrate');
+toggle('camTog','front',()=>{ if(running){ stop(); setTimeout(start,400); } });
+$('ntfyUrl').oninput = e => cfg.ntfy = e.target.value.trim();
+
+window.addEventListener('resize',drawRibbon);
+renderLog(); tickUI();
+})();
+</script>
+</body>
+</html>
