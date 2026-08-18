@@ -1,0 +1,25 @@
+{
+  "name": "Night Watch",
+  "short_name": "Night Watch",
+  "description": "AI baby monitor - phone ke apne camera aur mic se motion aur rona detect karta hai.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "fullscreen",
+  "orientation": "portrait",
+  "background_color": "#100D0A",
+  "theme_color": "#100D0A",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ]
+}
