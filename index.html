@@ -371,7 +371,7 @@ let loopTimer=null, sampleTimer=null, uiTimer=null, alarmTimer=null;
 
 let motion=0, motionSmooth=0, sound=0, baseline=null, cryRatio=0;
 let cryBuf=[], stillSince=null, cryActiveSince=null, clearSince=null;
-let peakMotionRecent=[], samples=[], log=[];
+let lastSpikeAt=0, samples=[], log=[];
 let state='ok', cause=null, alarming=false, suppressAudio=0;
 
 // ============ helpers ============
@@ -501,15 +501,17 @@ function evaluate(){
   else cryActiveSince=null;
 
   // --- stillness + struggle pattern ---
-  peakMotionRecent.push({t:now,v:motionSmooth});
-  peakMotionRecent = peakMotionRecent.filter(p=>now-p.t < 25000);
-  const recentPeak = peakMotionRecent.reduce((m,p)=>Math.max(m,p.v),0);
+// latch the moment of the last thrash — must outlive the escalation window,
+  // so this is a timestamp, not an expiring sample buffer
+  if(motionSmooth > cfg.struggleThresh) lastSpikeAt = now;
 
   if(motionSmooth < cfg.stillThresh){ if(!stillSince) stillSince=now; }
   else stillSince=null;
 
   const stillFor = stillSince ? now-stillSince : 0;
-  const struggled = recentPeak > cfg.struggleThresh && stillFor > 22000;
+// stillness must have set in shortly AFTER the thrash, not drifted in later
+  const spikeThenStill = lastSpikeAt && stillSince && (stillSince-lastSpikeAt) < 8000;
+  const struggled = spikeThenStill && stillFor > 22000;
 
   // --- decide ---
   let next='ok', why=null;
@@ -683,7 +685,7 @@ function stop(){
   if(stream) stream.getTracks().forEach(t=>t.stop());
   if(audioCtx) audioCtx.close();
   stream=null; audioCtx=null; prevFrame=null; baseline=null;
-  cryBuf=[]; stillSince=null; cryActiveSince=null; peakMotionRecent=[];
+  cryBuf=[]; stillSince=null; cryActiveSince=null; lastSpikeAt=0;
   if(wakeLock){ wakeLock.release(); wakeLock=null; }
   $('pulse').classList.remove('live');
   $('startBtn').textContent='Start watching'; $('startBtn').classList.remove('running');
@@ -698,7 +700,7 @@ $('silenceBtn').onclick = ()=>{
   clearAlarm('manually band kiya');
   suppressAudio = Date.now()+30000;
   stillSince = Date.now();
-  cryBuf=[]; cryActiveSince=null; peakMotionRecent=[];
+  cryBuf=[]; cryActiveSince=null; lastSpikeAt=0;
   transition('ok',null);
 };
 
